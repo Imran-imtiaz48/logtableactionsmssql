@@ -21,55 +21,29 @@ AS
 BEGIN
     SET NOCOUNT ON;
 
-    -- Handle INSERT operations (record exists in 'inserted' but not in 'deleted')
-    IF EXISTS (SELECT 1 FROM inserted) AND NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
+    BEGIN TRY
+        -- Insert log entries for INSERT, UPDATE, and DELETE actions
         INSERT INTO [dbo].[LogTableName] 
             (mtnID, created_date, [status], modified_date, columnOneName, columnTwoName, userID, actionType)
         SELECT 
-            mtnID,
-            created_date,
-            [status],
-            modified_date,
-            columnOneName,
-            columnTwoName,
-            userID,
-            'Inserted'
-        FROM inserted;
-    END
-
-    -- Handle UPDATE operations (record exists in both 'inserted' and 'deleted')
-    IF EXISTS (SELECT 1 FROM inserted) AND EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        INSERT INTO [dbo].[LogTableName] 
-            (mtnID, created_date, [status], modified_date, columnOneName, columnTwoName, userID, actionType)
-        SELECT 
-            mtnID,
-            created_date,
-            [status],
-            modified_date,
-            columnOneName,
-            columnTwoName,
-            userID,
-            'Updated'
-        FROM inserted;
-    END
-
-    -- Handle DELETE operations (record exists in 'deleted' but not in 'inserted')
-    IF NOT EXISTS (SELECT 1 FROM inserted) AND EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        INSERT INTO [dbo].[LogTableName] 
-            (mtnID, created_date, [status], modified_date, columnOneName, columnTwoName, userID, actionType)
-        SELECT 
-            mtnID,
-            created_date,
-            [status],
-            modified_date,
-            columnOneName,
-            columnTwoName,
-            userID,
-            'Deleted'
-        FROM deleted;
-    END
+            COALESCE(i.mtnID, d.mtnID),
+            COALESCE(i.created_date, d.created_date),
+            COALESCE(i.[status], d.[status]),
+            COALESCE(i.modified_date, d.modified_date),
+            COALESCE(i.columnOneName, d.columnOneName),
+            COALESCE(i.columnTwoName, d.columnTwoName),
+            COALESCE(i.userID, d.userID),
+            CASE 
+                WHEN i.mtnID IS NOT NULL AND d.mtnID IS NULL THEN 'Inserted'
+                WHEN i.mtnID IS NOT NULL AND d.mtnID IS NOT NULL THEN 'Updated'
+                WHEN i.mtnID IS NULL AND d.mtnID IS NOT NULL THEN 'Deleted'
+            END AS actionType
+        FROM inserted i
+        FULL OUTER JOIN deleted d ON i.mtnID = d.mtnID;
+    END TRY
+    BEGIN CATCH
+        -- Handle errors (optional: log to an error table)
+        PRINT 'Error in Trigger: ' + ERROR_MESSAGE();
+    END CATCH
 END;
 GO
